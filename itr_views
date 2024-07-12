@@ -1,0 +1,553 @@
+
+def upload_to_s3(pdf_data, bucket_name, object_key):
+    try:
+        s3 = boto3.client('s3', region_name=AWS_REGION_NAME, aws_access_key_id=AWS_ACCESS_KEY,
+                          aws_secret_access_key=AWS_SECRET_KEY)
+        response = s3.put_object(Bucket=bucket_name, Key=object_key, Body=pdf_data)
+        s3_path = f"https://{bucket_name}.s3.amazonaws.com/{object_key}"
+        return s3_path
+    except Exception as e:
+        return Response({'error_message': str(e), 'status_cd': 1},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+from password_generator import PasswordGenerator
+def Autogenerate_password():
+    pwo = PasswordGenerator()
+    k = pwo.shuffle_password('abcdefghijklmnopqrstuvwxyz', 8)
+    return k
+
+#
+# def update_business_profession_income(business_profession_income, income_types):
+#     incometype_exists = False
+#     # {'income_type': '', 'bpo_type': '', 'nature': '', 'company_name': '', 'revenue_type': 0,
+#     #  'total_revenue': 0, 'total_expenses': 0}
+#     for source in business_profession_income:
+#         if source['income_type'] == income_types['income_type']:
+#             source['bpo_type'] = income_types['bpo_type']
+#             source['nature'] = income_types['nature']
+#             source['company_name'] = income_types['company_name']
+#             source['revenue_type'] = income_types['revenue_type']
+#             source['total_revenue'] = income_types['total_revenue']
+#             source['total_expenses'] = income_types['total_expenses']
+#             incometype_exists = True
+#             break
+#
+#     if not incometype_exists:
+#         business_profession_income.append(income_types)
+#
+#
+# def update_otherincome(other_income, otherincome_types):
+#     incometype_exists = False
+#
+#     for source in other_income:
+#         if source['othreincomeType'] == otherincome_types['othreincomeType']:
+#             source['description'] = otherincome_types['description']
+#             source['amount'] = otherincome_types['amount']
+#
+#             incometype_exists = True
+#             break
+#
+#     if not incometype_exists:
+#         other_income.append(otherincome_types)
+
+
+def update_taxsavings(tax_savings, taxsavings):
+    incometype_exists = False
+
+    for source in tax_savings:
+        if source['taxsavingsType'] == taxsavings['taxsavingsType']:
+            source['tax_amount'] = taxsavings['tax_amount']
+            source['document'].extend(taxsavings['document'])
+
+            incometype_exists = True
+            break
+
+    if not incometype_exists:
+        tax_savings.append(taxsavings)
+
+def as26data( as26_data,pos, statements_ofas26):
+    index = pos
+    if index <= len(as26_data)-1:
+        as26_data[index]['from_year'] = statements_ofas26['from_year']
+        as26_data[index]['to_year'] = statements_ofas26['to_year']
+        as26_data[index]['as26file'].extend(statements_ofas26['as26file'])
+    else:
+        as26_data.append(statements_ofas26)
+
+def update_bankstatements( bank_data,pos, bank_statements_obj):
+    index = pos
+    if index <= len(bank_data)-1:
+        bank_data[index]['from_date'] = bank_statements_obj['from_date']
+        bank_data[index]['to_date'] = bank_statements_obj['to_date']
+        bank_data[index]['bankstatement'].extend(bank_statements_obj['bankstatement'])
+    else:
+        bank_data.append(bank_statements_obj)
+
+class itr_filing(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        try:
+            email = request.data.get('email').lower()
+            mobile_no = request.data.get('mobileNumber')
+            first_name = request.data.get('firstname')
+            last_name = request.data.get('lastname')
+            otp = int(request.data.get('otp'))
+            firm_id = int(request.data.get('firmid'))
+
+
+            required_fields = [
+                'email', 'firstname', 'lastname', 'mobileNumber',
+                'otp','firmid'
+            ]
+            missing_fields = [field for field in required_fields if field not in request.data]
+
+            if missing_fields:
+                return Response(
+                    {'error': 'Missing fields', 'missing_fields': missing_fields},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            query = MobileOtpVerification.objects.filter(mobileNumber=mobile_no)
+            if query.exists():
+                record = query.first()
+                if record.otp == otp:
+                    record.otp = None
+                    record.save()
+                else:
+                    return Response({'error_message': 'Otp not matching'}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                return Response({'error_message': 'Phone number not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            client_info = request.data.copy()
+            client_info['first_name'] = first_name
+            client_info['last_name'] = last_name
+            del client_info['firstname']
+            del client_info['lastname']
+
+            password = Autogenerate_password()
+            client_info.update({
+                "admin_id": "2",
+                "firmID": firm_id,
+                "company_id": "1",
+                "type": 'external-itr',
+                "email": email.lower(),
+                "role_name": 'Client',
+                "role_id": '3',
+                "password": password,
+                "autogenerated_password": password,
+                "username": email
+            })
+
+            serializer = UserSerializerWithToken(data=client_info)
+            if serializer.is_valid():
+                serializer.save()
+                db = mongoclient[mongoclient_database_name]
+                db['user_management_fb_user'].update_one({'id': serializer.data['id']}, {'$set': {'businessList': []}})
+                user_data = serializer.data
+
+                email_body = (
+                    f"Welcome to FinanceBox Portal <br>"
+                    f"Here are your login credentials to access the FinanceBox portal <br>"
+                    f"Username: {user_data['email']} <br>"
+                    f"Password: {client_info['password']}"
+                )
+
+                email_data = {
+                    "from_email": 'admin@financebox.in',
+                    "to_email": [client_info['email']],
+                    "subject": "FinanceBox Credentials",
+                    "body": email_body
+                }
+
+                url = "https://87li62rgdb.execute-api.ap-south-1.amazonaws.com/api/send-email"
+                requests.post(url, json=email_data, headers={'Content-Type': 'application/json'})
+
+                response_data = {
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "email": email,
+                    "mobile_no": mobile_no,
+                    'client_id': user_data['id'],
+                    'ca_admin_id': '2',
+                    'firmId': firm_id,
+                    "partner_id": None,
+                    'partnerName':'',
+                    "pan_no": "",
+                    "aadhar_no": "",
+                    "type": "",
+                    "assessment_year": "",
+                    "income_sources": {},
+                    "basic_charges": 0,
+                    "itr_userid": "",
+                    "itr_password": "",
+                    "residential_status": "",
+                    "salary_income": {
+                        "form_16": [],
+                        "pay_slips": []
+                    },
+                    "bank_statements": [],
+                    "as_26": [],
+                    "capital_gains": {
+                        "sale_of_land_or_building": [],
+                        "stock_and_mutual_funds": [],
+                        "other_capital_gains": []
+                    },
+                    "business_profession_income": [],
+                    "other_income": [],
+                    "sop": 0,
+                    "let_out": 0,
+                    "tax_savings": [],
+                    'info_docs':'NO',
+                    'computation':'NO',
+                    'filing':'NO',
+                    'everification':'NO',
+                    'documentation':'NO',
+                    'status:':'',
+                    'payment':False,
+                    'info':'',
+                    'remarks':'',
+                    'submission_date':'',
+                    'upload_computation':[],
+                    'TaxSummary':{}
+                }
+                itr_serializer = itr_filing_userdetailsSerializer(data=response_data)
+                if itr_serializer.is_valid():
+                    itr_serializer.save()
+                else:
+                    return Response(itr_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                return Response(user_data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except (KeyError, ValueError) as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request):
+        try:
+            id = request.data.get('id')
+            query = itr_filing_userdetails.objects.get(id=id)
+            ex_data = itr_filing_userdetailsSerializer(query).data
+            s3 = boto3.client('s3', region_name=AWS_REGION_NAME, aws_access_key_id=AWS_ACCESS_KEY,
+                              aws_secret_access_key=AWS_SECRET_KEY)
+
+            # income_types = {'income_type': '', 'bpo_type': '', 'nature': '', 'company_name': '', 'revenue_type': 0,
+            #                 'total_revenue': 0, 'total_expenses': 0}
+            # otherincome_types = {'othreincomeType': '', 'description': '', 'amount': 0}
+            taxsavings = {'taxsavingsType': '', 'tax_amount': 0, 'document': []}
+            bank_statements_obj = {'from_date':'','to_date':'',"bankstatement":[]}
+            statements_ofas26 = {'from_year':'','to_year':'','as26file':[]}
+
+            pos = 0
+            for k, v in request.data.items():
+                if k =="business_profession_income":
+                    ex_data[k]=v
+                elif k == 'other_income':
+                    ex_data[k] = v
+                elif k == 'TaxSummary':
+                    ex_data[k] = v
+                elif k=='index':
+                    pos =int(v)
+                elif k in ['Salary','House_Property','Business','Capital_Gains','F_O','Crypto','Foreign_Investment','Agriculture']:
+                    ex_data['income_sources'][k]= v
+                elif k == 'upload_computation':
+                    comp = request.FILES.get('upload_computation')
+                    file_ex = comp.name.replace(" ", "_")
+                    object_key = f'itr_filing/{id}/sale_deed_files/{file_ex}'
+                    url = upload_to_s3(comp, 'seslambdatrigger-bucket', object_key)
+                    if 'upload_computation' not in ex_data:
+                        ex_data['upload_computation'] = []
+                    if not ex_data['upload_computation']:
+                        ex_data['upload_computation'].append({"file": url})
+                    else:
+                        ex_data['upload_computation'][0]['file'] = url
+
+                elif k in ['taxsavingsType', 'tax_amount','documents']:
+                    if k == 'documents':
+                        filetype = k
+                        taxsaving = request.FILES.getlist(filetype)
+                        for file_obj in taxsaving:
+                            file_ex = file_obj.name.replace(" ", "_")
+                            object_key = f'itr_filing/{id}/taxsaving_documents/{file_ex}'
+                            url = upload_to_s3(file_obj, 'seslambdatrigger-bucket', object_key)
+                            taxsavings["document"].append({"file": url})
+                    else:
+                        taxsavings[k] = v
+                elif k == "form_16":
+                    form_16 = request.FILES.getlist('form_16')
+                    for file_obj in form_16:
+                        file_ex = file_obj.name.replace(" ", "_")
+                        object_key = f'itr_filing/{id}/form_16_file/{file_ex}'
+                        url = upload_to_s3(file_obj, 'seslambdatrigger-bucket', object_key)
+                        ex_data['salary_income']['form_16'].append({"file": url})
+                elif k == "pay_slips":
+                    payslips = request.FILES.getlist('pay_slips')
+                    for file_obj in payslips:
+                        file_ex = file_obj.name.replace(" ", "_")
+                        object_key = f'itr_filing/{id}/payslips/{file_ex}'
+                        url = upload_to_s3(file_obj, 'seslambdatrigger-bucket', object_key)
+                        ex_data['salary_income']['pay_slips'].append({"file": url})
+                elif k in ['from_date','to_date',"bankstatement"]:
+                    if k =="bankstatement":
+                        bankstate_ment = request.FILES.getlist('bankstatement')
+                        for file_obj in bankstate_ment:
+                            file_ex = file_obj.name.replace(" ", "_")
+                            object_key = f'itr_filing/{id}/bankstatements/{file_ex}'
+                            url = upload_to_s3(file_obj, 'seslambdatrigger-bucket', object_key)
+                            bank_statements_obj['bankstatement'].append({"file": url})
+                    else:
+                        bank_statements_obj[k] = v
+                elif k in ['from_year','to_year','as26file']:
+                    if k == 'as26file':
+                        as26 = request.FILES.getlist('as26file')
+                        for file_obj in as26:
+                            file_ex = file_obj.name.replace(" ", "_")
+                            object_key = f'itr_filing/{id}/as26statements/{file_ex}'
+                            url = upload_to_s3(file_obj, 'seslambdatrigger-bucket', object_key)
+                            statements_ofas26['as26file'].append({"file": url})
+                    else:
+                        statements_ofas26[k] = v
+                elif k == 'upload_property_deed':
+                    property_deed = request.FILES.getlist('upload_property_deed')
+                    for file_obj in property_deed:
+                        file_ex = file_obj.name.replace(" ", "_")
+                        object_key = f'itr_filing/{id}/property_deed/{file_ex}'
+                        url = upload_to_s3(file_obj, 'seslambdatrigger-bucket', object_key)
+
+                        if len(ex_data['capital_gains']['sale_of_land_or_building']) <= pos:
+                            ex_data['capital_gains']['sale_of_land_or_building'].append(
+                                {"upload_property_deed": [], "upload_sale_deed": []})
+                        if 'upload_property_deed' not in ex_data['capital_gains']['sale_of_land_or_building'][pos]:
+                            ex_data['capital_gains']['sale_of_land_or_building'][pos]['upload_property_deed'] = []
+                        ex_data['capital_gains']['sale_of_land_or_building'][pos]['upload_property_deed'].append(
+                            {"file": url})
+
+                elif k == 'upload_sale_deed':
+                        sale_deed = request.FILES.getlist('upload_sale_deed')
+                        for file_obj in sale_deed:
+                            file_ex = file_obj.name.replace(" ", "_")
+                            object_key = f'itr_filing/{id}/sale_deed/{file_ex}'
+                            url = upload_to_s3(file_obj, 'seslambdatrigger-bucket', object_key)
+                            if len(ex_data['capital_gains']['sale_of_land_or_building']) <= pos:
+                                ex_data['capital_gains']['sale_of_land_or_building'].append(
+                                    {"upload_property_deed": [], "upload_sale_deed": []})
+                            if 'upload_sale_deed' not in ex_data['capital_gains']['sale_of_land_or_building'][pos]:
+                                ex_data['capital_gains']['sale_of_land_or_building'][pos]['upload_sale_deed'] = []
+                            ex_data['capital_gains']['sale_of_land_or_building'][pos]['upload_sale_deed'].append(
+                                {"file": url})
+                elif k == 'stock_and_mutual_funds':
+                    st_m_funds = request.FILES.getlist('stock_and_mutual_funds')
+                    if st_m_funds:
+                        for file_obj in st_m_funds:
+                            file_ex = file_obj.name.replace(" ", "_")
+                            object_key = f'itr_filing/{id}/stock_and_mutual_funds_files/{file_ex}'
+                            url = upload_to_s3(file_obj, 'seslambdatrigger-bucket', object_key)
+                            if len(ex_data['capital_gains']['stock_and_mutual_funds']) <= pos:
+                                ex_data['capital_gains']['stock_and_mutual_funds'].append({"files": []})
+                            ex_data['capital_gains']['stock_and_mutual_funds'][pos]['files'].append({"file": url})
+                elif k == 'other_capital_gains':
+                    other_capital_gain = request.FILES.getlist('other_capital_gains')
+                    for file_obj in other_capital_gain:
+                        file_ex = file_obj.name.replace(" ", "_")
+                        object_key = f'itr_filing/{id}/other_capital_files/{file_ex}'
+                        url = upload_to_s3(file_obj, 'seslambdatrigger-bucket', object_key)
+                        if len(ex_data['capital_gains']['other_capital_gains']) <= pos:
+                            ex_data['capital_gains']['other_capital_gains'].append({"files": []})
+                        ex_data['capital_gains']['other_capital_gains'][pos]['files'].append({"file": url})
+
+
+                else:
+                    ex_data[k] = v
+            if any(bank_statements_obj.values()):
+                update_bankstatements(ex_data['bank_statements'], pos, bank_statements_obj)
+            if any(statements_ofas26.values()):
+                as26data( ex_data['as_26'],pos, statements_ofas26)
+
+            # if any(income_types.values()):
+            #     update_business_profession_income(ex_data['business_profession_income'],income_types)
+
+
+            # if any(otherincome_types.values()):
+            #     update_otherincome(ex_data['other_income'], otherincome_types)
+            if any(taxsavings.values()):
+                update_taxsavings(ex_data['tax_savings'], taxsavings)
+
+            serializer = itr_filing_userdetailsSerializer(query, data=ex_data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except (KeyError, ValueError) as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self,request):
+            role_id = request.user.role_id
+            cid = request.GET.get('client_id')
+            try:
+                if cid :
+                    query = itr_filing_userdetails.objects.get(client_id=cid)
+                    existing_data = itr_filing_userdetailsSerializer(query).data
+                    return Response(existing_data, status=status.HTTP_200_OK)
+
+                if role_id == "2":
+                    query = itr_filing_userdetails.objects.filter(partner_id=int(request.user.id))
+                    existing_data = itr_filing_userdetailsSerializer(query,many=True).data
+                    return Response(existing_data, status=status.HTTP_200_OK)
+                if role_id =='3':
+                    query = itr_filing_userdetails.objects.get(client_id=cid)
+                    existing_data = itr_filing_userdetailsSerializer(query).data
+                    return Response(existing_data, status=status.HTTP_200_OK)
+
+                if role_id == "1":
+                    query = itr_filing_userdetails.objects.filter(firmId=request.user.firmID)
+                    existing_data = itr_filing_userdetailsSerializer(query, many=True).data
+                    return Response(existing_data, status=status.HTTP_200_OK)
+                else:
+                    return Response({"message": "Data Not found"}, status=status.HTTP_200_OK)
+
+            except (KeyError, ValueError) as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def delete_files_from_s3(file_list=None,filepath=None):
+
+    s3 = boto3.client('s3', region_name=AWS_REGION_NAME, aws_access_key_id=AWS_ACCESS_KEY,
+                      aws_secret_access_key=AWS_SECRET_KEY)
+    if filepath:
+        parsed_url = urllib.parse.urlparse(filepath)
+        if not (parsed_url.netloc and parsed_url.path):
+            return {'error_message': 'Invalid file path URL'}
+
+        bucket_name = parsed_url.netloc.split('.')[0]
+        object_key = parsed_url.path.lstrip('/')
+
+        try:
+            s3.delete_object(Bucket=bucket_name, Key=object_key)
+        except Exception as e:
+            logger.error(f"Error deleting file {object_key} from S3: {e}", exc_info=1)
+            return {'error_msg': f"Error deleting file {object_key} from S3: {str(e)}"}
+    else:
+        for file_info in file_list:
+            file_url = file_info['file']
+
+            parsed_url = urllib.parse.urlparse(file_url)
+            if not (parsed_url.netloc and parsed_url.path):
+                return {'error_message': 'Invalid file path URL'}
+
+            bucket_name = parsed_url.netloc.split('.')[0]
+            object_key = parsed_url.path.lstrip('/')
+
+            try:
+                s3.delete_object(Bucket=bucket_name, Key=object_key)
+            except Exception as e:
+                logger.error(f"Error deleting file {object_key} from S3: {e}", exc_info=1)
+                return {'error_msg': f"Error deleting file {object_key} from S3: {str(e)}"}
+
+
+@api_view(['DELETE'])
+def deletefiles(request):
+    try:
+        user_id = request.GET.get('id')
+        file_type = request.GET.get('type')
+        index = request.GET.get('index')
+        sub_index = request.GET.get('subindex')
+        filepath = request.GET.get('path')
+        saletype = request.GET.get('saletype')
+        taxsavingsType = request.GET.get('taxsavingsType')
+        if None in [user_id, file_type]:
+            return Response({'error_msg': 'Provide input details'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if index not in [None, '']:
+            index = int(index)
+        if sub_index not in [None, '']:
+            sub_index = int(sub_index)
+
+        query = itr_filing_userdetails.objects.get(id=user_id)
+        serializer = itr_filing_userdetailsSerializer(query)
+        existing_data = serializer.data
+        if file_type == "upload_computation" and index < len(existing_data['upload_computation']):
+            computation = None
+            filepath = existing_data['upload_computation'][index]['file']
+            delete_files_from_s3(computation, filepath)
+            existing_data['upload_computation'].pop(index)
+        elif file_type == 'form_16' and index < len(existing_data['salary_income']['form_16']):
+            form16 = None
+            filepath = existing_data['salary_income']['form_16'][index]['file']
+            delete_files_from_s3(form16, filepath)
+            existing_data['salary_income']['form_16'].pop(index)
+        elif file_type == 'pay_slips' and index < len(existing_data['salary_income']['pay_slips']):
+            payslip = None
+            filepath = existing_data['salary_income']['pay_slips'][index]['file']
+            delete_files_from_s3(payslip, filepath)
+            existing_data['salary_income']['pay_slips'].pop(index)
+        elif file_type == 'bank_statements' and index < len(existing_data['bank_statements']):
+            if sub_index is not None:
+                bank_statements = existing_data['bank_statements'][index]['bankstatement']
+                delete_files_from_s3(bank_statements,filepath)
+                existing_data['bank_statements'][index]['bankstatement'].pop(sub_index)
+            else:
+                bank_statements = existing_data['bank_statements'][index]['bankstatement']
+                delete_files_from_s3(bank_statements)
+                existing_data['bank_statements'].pop(index)
+
+        elif file_type == 'as_26' and index < len(existing_data['as_26']):
+            if sub_index is not None:
+                as_26_statements = existing_data['as_26'][index]['as26file']
+                delete_files_from_s3(as_26_statements,filepath)
+                existing_data['as_26'][index]['as26file'].pop(sub_index)
+            else:
+                as_26_statements = existing_data['as_26'][index]['as26file']
+                delete_files_from_s3(as_26_statements)
+                existing_data['as_26'].pop(index)
+
+        elif file_type == 'sale_of_land_or_building' and index < len(
+                existing_data['capital_gains']['sale_of_land_or_building']):
+            if sub_index is not None and saletype is not None:
+                files_to_delete = None
+                delete_files_from_s3(files_to_delete,filepath)
+                existing_data['capital_gains']['sale_of_land_or_building'][index][saletype].pop(sub_index)
+            else:
+                pdeed = existing_data['capital_gains']['sale_of_land_or_building'][index]
+                files_to_delete = []
+                for key in pdeed:
+                    files_to_delete.extend([doc for doc in pdeed[key]])
+                delete_files_from_s3(files_to_delete)
+                existing_data['capital_gains']['sale_of_land_or_building'].pop(index)
+
+        elif file_type == 'stock_and_mutual_funds' and index < len(
+                existing_data['capital_gains']['stock_and_mutual_funds']):
+            if sub_index is not None:
+                stock = existing_data['capital_gains']['stock_and_mutual_funds'][index]['files']
+                delete_files_from_s3(stock,filepath)
+                existing_data['capital_gains']['stock_and_mutual_funds'][index]['files'].pop(sub_index)
+            else:
+                stock = existing_data['capital_gains']['stock_and_mutual_funds'][index]['files']
+                delete_files_from_s3(stock)
+                existing_data['capital_gains']['stock_and_mutual_funds'].pop(index)
+
+        elif file_type == 'other_capital_gains' and index < len(existing_data['capital_gains']['other_capital_gains']):
+            if sub_index is not None:
+                ocg = existing_data['capital_gains']['other_capital_gains'][index]['files']
+                delete_files_from_s3(ocg,filepath)
+                existing_data['capital_gains']['other_capital_gains'][index]['files'].pop(sub_index)
+            else:
+                ocg = existing_data['capital_gains']['other_capital_gains'][index]['files']
+                delete_files_from_s3(ocg)
+                existing_data['capital_gains']['other_capital_gains'].pop(index)
+        elif file_type == 'tax_savings':
+            data = existing_data['tax_savings']
+            file = None
+            for taxdata in data:
+                if taxdata['taxsavingsType'] == taxsavingsType:
+                    if index < len(taxdata['document']):
+                        filepath =taxdata ['document'][index]['file']
+                        delete_files_from_s3(file, filepath)
+                        taxdata['document'].pop(index)
+                    else:
+                        return Response({"message": "Data Not found or data already deleted please check index"}, status=status.HTTP_200_OK)
+
+        serializer = itr_filing_userdetailsSerializer(query, data=existing_data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(e, exc_info=1)
+        return Response({'error_message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
