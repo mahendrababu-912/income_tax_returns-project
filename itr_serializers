@@ -1,0 +1,147 @@
+class IncomeTypesSerializer(serializers.Serializer):
+    Salary = serializers.BooleanField(default=False)
+    House_Property = serializers.BooleanField(default=False)
+    Business = serializers.BooleanField(default=False)
+    Capital_Gains = serializers.BooleanField(default=False)
+    F_O = serializers.BooleanField(default=False)
+    Crypto = serializers.BooleanField(default=False)
+    Foreign_Investment = serializers.BooleanField(default=False)
+    Agriculture = serializers.BooleanField(default=False)
+    other_income = serializers.BooleanField(default=False)
+
+
+class MultipleFilesSerializer(serializers.Serializer):
+    file = serializers.CharField(max_length=200, allow_blank=True,allow_null=True)
+
+class filingserializer(serializers.Serializer):
+    files = MultipleFilesSerializer(many=True, default=[])
+
+class BusinessProfessionIncomeSerializer(serializers.Serializer):
+    income_type = serializers.CharField(max_length=50,allow_null=True,allow_blank=True)
+    bpo_type = serializers.CharField(max_length=50,allow_null=True,allow_blank=True)
+    nature = serializers.CharField(max_length=50,allow_null=True,allow_blank=True)
+    company_name = serializers.CharField(max_length=100,allow_null=True,allow_blank=True)
+    revenue_type_cash = serializers.CharField(max_length=100, allow_null=True, allow_blank=True)
+    revenue_type_bank = serializers.CharField(max_length=100, allow_null=True, allow_blank=True)
+    total_revenue = serializers.IntegerField(allow_null=True)
+    total_expenses = serializers.IntegerField(allow_null=True)
+    expenses_type_cash = serializers.IntegerField(allow_null=True)
+    expenses_type_bank = serializers.IntegerField(allow_null=True)
+
+
+class OtherIncomeSerializer(serializers.Serializer):
+    othreincomeType = serializers.CharField(max_length=50,allow_null=True,allow_blank=True)
+    description = serializers.CharField(max_length=255,allow_blank=True,allow_null=True)
+    amount = serializers.IntegerField(allow_null=True)
+
+
+class TaxSavingsSerializer(serializers.Serializer):
+    taxsavingsType = serializers.CharField(max_length=50,allow_blank=True,allow_null=True)
+    tax_amount = serializers.IntegerField(allow_null=True)
+    document = MultipleFilesSerializer(many=True, default=[])
+
+
+class PropertySerializer(serializers.Serializer):
+    upload_property_deed = MultipleFilesSerializer(many=True, default=[])
+    upload_sale_deed = MultipleFilesSerializer(many=True, default=[])
+
+
+class SaleLandOrBuildingSerializer(serializers.Serializer):
+    sale_of_land_or_building = PropertySerializer(many=True, default=[])
+    stock_and_mutual_funds = filingserializer(many=True, default=[])
+    other_capital_gains = filingserializer(many=True, default=[])
+
+
+class UploadFilesSerializer(serializers.Serializer):
+    form_16 = MultipleFilesSerializer(many=True, default=[])
+    pay_slips = MultipleFilesSerializer(many=True, default=[])
+
+class BankStatementsSerializer(serializers.Serializer):
+    from_date = serializers.DateField()
+    to_date = serializers.DateField()
+    bankstatement = MultipleFilesSerializer(many=True, default=[])
+
+
+class As26StatementsSerializer(serializers.Serializer):
+    from_year = serializers.CharField(max_length=50, allow_null=True, allow_blank=True)
+    to_year = serializers.CharField(max_length=50, allow_null=True, allow_blank=True)
+    as26file = MultipleFilesSerializer(many=True, default=[])
+
+
+class TaxSummarySerializer(serializers.Serializer):
+    gross_taxable_income = serializers.IntegerField(default=None, allow_null=True)
+    total_deductions = serializers.IntegerField(default=None, allow_null=True)
+    net_taxable_income = serializers.IntegerField(default=None, allow_null=True)
+    tds_tcs_deducted = serializers.IntegerField(default=None, allow_null=True)
+    advance_tax_paid = serializers.IntegerField(default=None, allow_null=True)
+    total_tax_liability = serializers.IntegerField(default=None, allow_null=True)
+    net_tax_liability_or_payable = serializers.IntegerField(default=None, allow_null=True)
+
+
+class itr_filing_userdetailsSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField(max_length=50, allow_null=True, allow_blank=True)
+    last_name = serializers.CharField(max_length=50, allow_null=True, allow_blank=True)
+    email = serializers.EmailField(allow_null=True, allow_blank=True)
+    mobile_no = serializers.IntegerField(allow_null=True)
+    client_id = serializers.IntegerField()
+    ca_admin_id = serializers.IntegerField()
+    firmId = serializers.IntegerField()
+    pan_no = serializers.CharField(max_length=200, allow_null=True, allow_blank=True, default=None)
+    aadhar_no = serializers.CharField(max_length=200, allow_null=True, allow_blank=True, default=None)
+    type = serializers.CharField(max_length=50, allow_null=True, allow_blank=True)
+    assessment_year = serializers.CharField(max_length=50, allow_null=True, allow_blank=True)
+    basic_charges = serializers.IntegerField(allow_null=True)
+    income_sources = IncomeTypesSerializer()
+    itr_userid = serializers.CharField(max_length=100,allow_null=True,allow_blank=True)
+    itr_password = serializers.CharField(max_length=100,allow_null=True,allow_blank=True)
+    residential_status = serializers.CharField(max_length=100,allow_null=True,allow_blank=True)
+    salary_income = UploadFilesSerializer()
+    bank_statements = BankStatementsSerializer(many=True, default=[])
+    as_26 = As26StatementsSerializer(many=True, default=[])
+    capital_gains = SaleLandOrBuildingSerializer()
+    business_profession_income = BusinessProfessionIncomeSerializer(many=True, default=[])
+    other_income = OtherIncomeSerializer(many=True, default=[])
+    sop = serializers.IntegerField(allow_null=True)
+    let_out = serializers.IntegerField(allow_null=True)
+    tax_savings = TaxSavingsSerializer(many=True, default=[])
+    upload_computation = MultipleFilesSerializer(many=True, default=[])
+    TaxSummary = TaxSummarySerializer()
+
+
+    def create(self, validated_data):
+        """
+        Create and return a new `ContactUs` instance, given the validated data.
+        """
+        instance = self.Meta.model(**validated_data)
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        """
+        Update and return an existing `ContactUs` instance, given the validated data.
+        """
+        [setattr(instance, k, v) for k, v in validated_data.items()]
+        instance.save()
+        return instance
+
+    def create_my_model(request):
+        serializer = itr_filing_userdetailsSerializer(data=request.data)
+        if serializer.is_valid():
+            # Access validated data
+            validated_data = serializer.validated_data
+
+            # Perform any operations with validated_data if needed
+
+            # Save the instance
+            serializer.save()
+
+            # Now it's safe to access serializer.data
+            data = serializer.data
+            return Response(data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+    class Meta:
+        model = itr_filing_userdetails
+        fields = '__all__'
+
