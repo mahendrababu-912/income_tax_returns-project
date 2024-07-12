@@ -1,0 +1,118 @@
+from datetime import datetime, timedelta, date
+from concurrent.futures import ThreadPoolExecutor
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import TaskOversight, TaskJobDetails
+from .serializers import TaskOversightSerializer
+
+
+class RecurringTaskManagementView(APIView):
+
+    @staticmethod
+    def create_task_job_details(instance, sub_task):
+        Taskmanagement_jobs.objects.create(
+            business_id=instance.get('business_id', None),
+            business_name=instance.get('business_name', None),
+            client_id=instance.get('client_id', None),
+            client_name=instance.get('client_name', None),
+            firmId=instance.get('firmId', None),
+            task_id=sub_task.get('task_id', None),
+            task_name=sub_task.get('task_name', None),
+            task_frequency=sub_task.get('task_frequency', None),
+            dept_id=sub_task['dept_id'],
+            dept_name=sub_task['dept_name'],
+            category_id=sub_task['category_id'],
+            category_name=sub_task['category_name'],
+            month=datetime.now().month,
+            fin=sub_task.get('fin', ''),
+            period=sub_task.get('period', ''),
+            manager_userid=sub_task.get('manager_userid', None),
+            manager_username=sub_task.get('manager_username', ''),
+            manager_name=sub_task.get('manager_name', ''),
+            employee_details=sub_task.get('employee_details', []),  # Ensure this matches TaskJobDetails field
+            job_status=sub_task.get('current_job_status', 'Created'),
+            start_date=sub_task.get('start_date', None),
+            end_date=sub_task.get('end_date', None),
+            total_hrs=sub_task.get('total_hrs', None),
+            sub_task_data=sub_task.get('sub_task_data', [])
+        )
+
+    @staticmethod
+    def update_task_dates(task_instance):
+        updated_tasks = []
+        for sub_task in task_instance['task_data']:
+            start_date = sub_task.get('start_date')
+            print(start_date)
+            if start_date:
+                try:
+                    if isinstance(start_date, str):
+                        start_date = datetime.strptime(start_date, "%Y-%m-%d")
+                    elif isinstance(start_date, date):
+                        start_date = datetime.combine(start_date, datetime.min.time())
+                    elif not isinstance(start_date, datetime):
+                        start_date = None
+
+                    if start_date:
+                        task_frequency = sub_task.get('task_frequency')
+                        new_start_date = None
+                        new_end_date = None
+
+                        if task_frequency == 'Monthly':
+                            new_start_date = start_date.replace(year=start_date.year + 1,
+                                                                month=1) if start_date.month == 12 else start_date.replace(
+                                month=start_date.month + 1)
+                        elif task_frequency == 'Quarterly':
+                            new_month = start_date.month + 3
+                            new_start_date = start_date.replace(year=start_date.year + 1,
+                                                                month=new_month - 12) if new_month > 12 else start_date.replace(
+                                month=new_month)
+                        elif task_frequency == 'Half Yearly':
+                            new_month = start_date.month + 6
+                            new_start_date = start_date.replace(year=start_date.year + 1,
+                                                                month=new_month - 12) if new_month > 12 else start_date.replace(
+                                month=new_month)
+                        elif task_frequency == 'Annually':
+                            new_start_date = start_date.replace(year=start_date.year + 1)
+
+                        if new_start_date:
+                            sub_task['start_date'] = new_start_date.strftime("%Y-%m-%d")
+                            print(sub_task['start_date'])
+                            sub_task['end_date'] = (new_start_date + timedelta(days=30)).strftime(
+                                "%Y-%m-%d")
+
+                except Exception as e:
+                    print(f"Failed to process start_date: {e}")
+                    start_date = None
+
+            updated_tasks.append(sub_task)
+            RecurringTaskManagementView.create_task_job_details(task_instance, sub_task)
+
+        #if you want reflect changes in task_oversight uncomment this
+        # task_instance['task_data'] = updated_tasks
+        # TaskOversight.objects.filter(id=task_instance['id']).update(task_data=updated_tasks)
+
+        return {
+            'id': task_instance['id'],
+            'task_data': updated_tasks
+        }
+
+    def process_tasks(self, tasks_instances):
+        results = []
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(self.update_task_dates, task) for task in tasks_instances]
+            for future in futures:
+                result = future.result()
+                results.append(result)
+        return results
+
+    def get(self, request, *args, **kwargs):
+        tasks = TaskOversight.objects.all()
+        serialized_tasks = TaskOversightSerializer(tasks, many=True).data
+        results = self.process_tasks(serialized_tasks)
+
+        response_data = {
+            "updated_tasks": results
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
