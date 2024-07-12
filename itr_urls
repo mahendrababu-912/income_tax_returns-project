@@ -1,0 +1,3 @@
+ path('itr_filing', views.itr_filing.as_view()),
+
+    path('deletefiles',views.deletefiles)
