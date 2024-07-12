@@ -1,0 +1,163 @@
+class income_types(models.Model):
+    Salary = models.BooleanField(default=False, blank=True)
+    House_Property= models.BooleanField(default=False, blank=True)
+    Business = models.BooleanField(default=False, blank=True)
+    Capital_Gains = models.BooleanField(default=False, blank=True)
+    F_O= models.BooleanField(default=False, blank=True)
+    Crypto = models.BooleanField(default=False, blank=True)
+    Foreign_Investment = models.BooleanField(default=False, blank=True)
+    Agriculture = models.BooleanField(default=False, blank=True)
+    other_income = models.BooleanField(default=False,blank=True)
+
+
+    class Meta:
+        abstract = True
+
+
+class multiple_files(models.Model):
+    file = models.CharField(max_length=200, null=True,blank=True)
+
+    class Meta:
+        abstract = True
+
+
+class BusinessProfessionIncome(models.Model):
+    income_type = models.CharField(max_length=50,null=True, blank=True )
+    bpo_type = models.CharField(max_length=50, null=True, blank=True)
+    nature = models.CharField(max_length=50, null=True, blank=True)
+    company_name = models.CharField(max_length=100, null=True, blank=True)
+    revenue_type_cash = models.CharField(max_length=100, null=True, blank=True)
+    revenue_type_bank = models.CharField(max_length=100, null=True, blank=True)
+    total_expenses = models.IntegerField(null=True, blank=True)
+    total_revenue = models.IntegerField(null=True, blank=True)
+    expenses_type_cash = models.IntegerField(null=True, blank=True)
+    expenses_type_bank = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        abstract = True
+
+
+class OtherIncome(models.Model):
+    othreincomeType = models.CharField(max_length=50, null=True, blank=True)
+    description = models.CharField(max_length=255,null=True, blank=True)
+    amount = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        abstract = True
+
+
+class TaxSavings(models.Model):
+    taxsavingsType = models.CharField(max_length=50, null=True, blank=True)
+    tax_amount = models.IntegerField(null=True, blank=True)
+    document = ArrayField(model_container=multiple_files)
+
+
+    class Meta:
+        abstract = True
+
+class filing(models.Model):
+    files = ArrayField(model_container=multiple_files)
+
+    class Meta:
+        abstract = True
+
+class property(models.Model):
+    upload_property_deed = ArrayField(model_container=multiple_files)
+    upload_sale_deed = ArrayField(model_container=multiple_files)
+
+    class Meta:
+        abstract = True
+
+
+class sale_land_or_building(models.Model):
+    sale_of_land_or_building = ArrayField(model_container=property, default=list)
+    stock_and_mutual_funds = ArrayField(model_container=filing)
+    other_capital_gains = ArrayField(model_container=filing)
+
+    class Meta:
+        abstract = True
+
+
+class uploadfiles(models.Model):
+    form_16 = ArrayField(model_container=multiple_files)
+    pay_slips = ArrayField(model_container=multiple_files)
+
+    class Meta:
+        abstract = True
+
+
+class Bank_statements(models.Model):
+    from_date = models.DateField()
+    to_date = models.DateField()
+    bankstatement = ArrayField(model_container=multiple_files)
+
+    class Meta:
+        abstract = True
+
+class taxSummary(models.Model):
+    gross_taxable_income = models.IntegerField(default=None,null=True)
+    total_deductions = models.IntegerField(default=None,null=True)
+    net_taxable_income = models.IntegerField(default=None,null=True)
+    tds_tcs_deducted = models.IntegerField(default=None,null=True)
+    advance_tax_paid = models.IntegerField(default=None,null=True)
+    total_tax_liability = models.IntegerField(default=None,null=True)
+    net_tax_liability_or_payable = models.IntegerField(default=None,null=True)
+
+    class Meta:
+        abstract = True
+
+class as26_statements(models.Model):
+    from_year =  models.CharField(max_length=50)
+    to_year =  models.CharField(max_length=50)
+    as26file = ArrayField(model_container=multiple_files)
+
+    class Meta:
+        abstract = True
+
+
+ITR_CHOICES = [
+    ('YES', 'YES'),
+    ('NO', 'NO')
+
+]
+
+class itr_filing_userdetails(BaseModel):
+    first_name = models.CharField(max_length=50)
+    last_name = models.CharField(max_length=50)
+    email = models.EmailField()
+    mobile_no = models.IntegerField(null=True, blank=True)
+    client_id = models.IntegerField(default=None)
+    ca_admin_id = models.IntegerField(default=None)
+    firmId = models.IntegerField(default=None)
+    partner_id = models.IntegerField(default=None, null=True)
+    partnerName = models.CharField(max_length=50, null=True, blank=True, default=None)
+    pan_no = models.CharField(max_length=200, null=True, blank=True, default=None)
+    aadhar_no = models.CharField(max_length=200, null=True, blank=True, default=None)
+    type = models.CharField(max_length=20)
+    assessment_year = models.CharField(max_length=20)
+    income_sources = EmbeddedField(model_container=income_types,default={})
+    basic_charges = models.IntegerField(null=True, blank=True)
+    itr_userid = models.CharField(max_length=100)
+    itr_password = models.CharField(max_length=100)
+    residential_status = models.CharField(max_length=100)
+    salary_income = EmbeddedField(model_container=uploadfiles,default={})
+    bank_statements = ArrayField(model_container=Bank_statements,default=list)
+    as_26 = ArrayField(model_container=as26_statements,default=list)
+    capital_gains = EmbeddedField(model_container=sale_land_or_building, default={})
+    business_profession_income = ArrayField(model_container=BusinessProfessionIncome, default=list)
+    other_income = ArrayField(model_container=OtherIncome, default=list)
+    sop = models.IntegerField(null=True, blank=True)
+    let_out = models.IntegerField(null=True, blank=True)
+    tax_savings = ArrayField(model_container=TaxSavings, default=list)
+    info_docs = models.CharField(max_length=20, choices=ITR_CHOICES, default='NO')
+    computation = models.CharField(max_length=20, choices=ITR_CHOICES, default='NO')
+    filing = models.CharField(max_length=20, choices=ITR_CHOICES, default='NO')
+    everification = models.CharField(max_length=20, choices=ITR_CHOICES, default='NO')
+    documentation = models.CharField(max_length=20, choices=ITR_CHOICES, default='NO')
+    status = models.CharField(max_length=20, null=True, blank=True)
+    payment = models.BooleanField(default=False)
+    info = models.CharField(max_length=20, null=True, blank=True)
+    remarks = models.CharField(max_length=20, null=True, blank=True)
+    upload_computation = ArrayField(model_container=multiple_files,default=list)
+    TaxSummary = EmbeddedField(model_container = taxSummary,default={})
+    submission_date = models.CharField(max_length=50, null=True, blank=True)
